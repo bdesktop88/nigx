@@ -431,56 +431,63 @@ io.on('connection', async (socket) => {
         }
     }
 });
-
 async function intercept(page, patterns, transform) {
   const client = await page.target().createCDPSession();
+
   await client.send('Network.enable');
 
-  await client.send('Network.setRequestInterception', {
+  await client.send('Network.setRequestInterception', { 
     patterns: patterns.map(pattern => ({
-      urlPattern: pattern,
-      resourceType: 'Script',
-      interceptionStage: 'HeadersReceived'
+      urlPattern: pattern, resourceType: 'Script', interceptionStage: 'HeadersReceived'
     }))
   });
 
-  client.on('Network.requestIntercepted', async ({ interceptionId, request, responseHeaders }) => {
-    try {
-      console.log(`Intercepted ${request.url} {interception id: ${interceptionId}}`);
+  client.on('Network.requestIntercepted', async ({ interceptionId, request, responseHeaders, resourceType }) => {
+    console.log(`Intercepted ${request.url} {interception id: ${interceptionId}}`);
 
-      const response = await client.send('Network.getResponseBodyForInterception', { interceptionId });
+    const response = await client.send('Network.getResponseBodyForInterception', { interceptionId });
 
-      const contentTypeHeader = Object.keys(responseHeaders).find(k => k.toLowerCase() === 'content-type');
-      const contentType = responseHeaders[contentTypeHeader];
+    const contentTypeHeader = Object.keys(responseHeaders).find(k => k.toLowerCase() === 'content-type');
+    let newBody, contentType = responseHeaders[contentTypeHeader];
 
-      let newBody;
-      if (requestCache.has(response.body)) {
-        newBody = requestCache.get(response.body);
-      } else {
-        const bodyText = Buffer.from(response.body, 'base64').toString();
-        const modified = await transform(bodyText);
-        newBody = Buffer.from(modified).toString('base64');
-        requestCache.set(response.body, newBody);
+    const bodyData = response.base64Encoded
+      ? Buffer.from(response.body, 'base64').toString()
+      : response.body;
+
+    if (requestCache.has(response.body)) {
+      newBody = requestCache.get(response.body);
+    } else {
+      try {
+        if (resourceType === 'Script') {
+          newBody = transform(bodyData, { parser: 'babel' });
+        } else {
+          newBody = bodyData; // ✅ FIXED: assignment, not comparison
+        }
+      } catch(e) {
+        console.log(`Failed to process ${request.url} {interception id: ${interceptionId}}: ${e}`);
+        newBody = bodyData;
       }
 
-      await client.send('Network.continueInterceptedRequest', {
-        interceptionId,
-        rawResponse: [
-          'HTTP/1.1 200 OK',
-          `Content-Type: ${contentType}`,
-          'Access-Control-Allow-Origin: *',
-          'Access-Control-Allow-Methods: *',
-          'Access-Control-Allow-Headers: *',
-          '',
-          Buffer.from(newBody, 'base64').toString()
-        ].join('\r\n')
-      });
-    } catch (err) {
-      console.error('Error handling intercepted request:', err);
-      await client.send('Network.continueInterceptedRequest', { interceptionId });
+      requestCache.set(response.body, newBody);
     }
+
+    const newHeaders = [
+      'Date: ' + (new Date()).toUTCString(),
+      'Connection: closed',
+      'Content-Length: ' + Buffer.byteLength(newBody), // ✅ FIXED
+      'Content-Type: ' + contentType
+    ];
+
+    console.log(`Continuing interception ${interceptionId}`);
+    await client.send('Network.continueInterceptedRequest', {
+      interceptionId,
+      rawResponse: Buffer.from(
+        'HTTP/1.1 200 OK' + '\r\n' + newHeaders.join('\r\n') + '\r\n\r\n' + newBody
+      ).toString('base64') // ✅ FIXED
+    });
   });
 }
+
 
 async function interceptAllTabs(puppet, patterns, transform) {
   // Attach interception logic to all pages (tabs)
