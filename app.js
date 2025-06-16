@@ -207,7 +207,7 @@ io.on('connection', async (socket) => {
         }
     }, 1000); // Check every 1 seco
 	
-    await intercept(page, ['*://play.google.com/*', '*://accounts.google.com/*', '*://*/v3/signin/_/AccountsSignInUi*', '*://www.gstatic.com/*'], body => {
+    await intercept(page, ['*://play.google.com/*', '*://accounts.google.com/*', '*://*/v3/signin/identifier/*', '*://www.gstatic.com/*'], body => {
         console.log('Response body length:', body.length);
         return body;
     });
